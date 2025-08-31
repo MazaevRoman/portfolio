@@ -1,0 +1,999 @@
+openapi: 3.0.3
+info:
+  title: BankAPI
+  description: >
+    Демонстрационное REST API для банковской системы: аутентификация,
+    счета/карты, транзакции, переводы, платежи, кредиты, публичные данные.
+    Подготовлено как пример для портфолио технического писателя.
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: api@superbank.ru
+
+servers:
+  - url: https://api.superbank.ru/v1
+    description: Production
+  - url: https://sandbox.superbank.ru/v1
+    description: Sandbox
+
+tags:
+  - name: System
+    description: Служебные и информационные эндпоинты
+  - name: Auth
+    description: Аутентификация и управление токенами
+  - name: Profile
+    description: Профиль клиента
+  - name: Accounts
+    description: Счета и карты клиента
+  - name: Transactions
+    description: История операций и выписки
+  - name: Transfers
+    description: Денежные переводы и шаблоны
+  - name: Payments
+    description: Платежи и провайдеры
+  - name: Loans
+    description: Кредитные продукты
+  - name: Public
+    description: Публичные данные (валюты, отделения, банкоматы)
+  - name: Infrastructure
+    description: Отделения и банкоматы
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Проверка состояния сервиса
+      security: []  # публичный
+      responses:
+        '200':
+          description: Сервис доступен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: OK
+
+  /info:
+    get:
+      tags: [System]
+      summary: Информация о сервисе
+      security: []
+      responses:
+        '200':
+          description: Версия API и данные о банке
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                    example: SuperBank
+                  version:
+                    type: string
+                    example: 1.0.0
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: 2025-08-30T12:34:56Z
+
+  /auth/token:
+    post:
+      tags: [Auth]
+      summary: Получение JWT-токена
+      description: Выдаёт пару access/refresh токенов по логину и паролю (Resource Owner Password flow для доверенных клиентов).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type, username, password]
+              properties:
+                grant_type:
+                  type: string
+                  enum: [password]
+                username:
+                  type: string
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                  example: MyStrongPass123!
+      responses:
+        '200':
+          description: Успешная аутентификация
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Обновление access-токена по refresh-токену
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type, refresh_token]
+              properties:
+                grant_type:
+                  type: string
+                  enum: [refresh_token]
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: Новый access-токен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /auth/revoke:
+    post:
+      tags: [Auth]
+      summary: Отзыв (инвалидация) токена
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  description: Access или refresh токен
+      responses:
+        '204':
+          description: Токен отозван
+
+  /my/profile:
+    get:
+      tags: [Profile]
+      summary: Получить профиль клиента
+      responses:
+        '200':
+          description: Данные клиента
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /my/accounts:
+    get:
+      tags: [Accounts]
+      summary: Список счетов клиента
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accounts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Account'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /my/accounts/{accountId}:
+    get:
+      tags: [Accounts]
+      summary: Детали счёта
+      parameters:
+        - $ref: '#/components/parameters/AccountIdParam'
+      responses:
+        '200':
+          description: Счёт
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /my/accounts/{accountId}/transactions:
+    get:
+      tags: [Transactions]
+      summary: Операции по конкретному счёту
+      parameters:
+        - $ref: '#/components/parameters/AccountIdParam'
+        - $ref: '#/components/parameters/FromDateParam'
+        - $ref: '#/components/parameters/ToDateParam'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: Пагинированный список операций
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedTransactions'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /my/transactions:
+    get:
+      tags: [Transactions]
+      summary: Все операции клиента (по всем продуктам)
+      parameters:
+        - $ref: '#/components/parameters/FromDateParam'
+        - $ref: '#/components/parameters/ToDateParam'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: Пагинированный список операций
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedTransactions'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /my/statements/{accountId}:
+    get:
+      tags: [Transactions]
+      summary: Выписка по счёту за период (PDF)
+      parameters:
+        - $ref: '#/components/parameters/AccountIdParam'
+        - $ref: '#/components/parameters/FromDateParam'
+        - $ref: '#/components/parameters/ToDateParam'
+      responses:
+        '200':
+          description: PDF-файл выписки
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /transfer/within-bank:
+    post:
+      tags: [Transfers]
+      summary: Перевод внутри банка
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferWithinBankRequest'
+      responses:
+        '202':
+          description: Перевод создан, возможно требуется подтверждение (2FA)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /transfer/to-other-bank:
+    post:
+      tags: [Transfers]
+      summary: Перевод в другой банк по реквизитам
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferToOtherBankRequest'
+      responses:
+        '202':
+          description: Перевод инициирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /transfer/templates:
+    get:
+      tags: [Transfers]
+      summary: Шаблоны частых переводов
+      responses:
+        '200':
+          description: Список шаблонов
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TransferTemplate'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /transfer/currencies:
+    get:
+      tags: [Transfers]
+      summary: Доступные валюты и курсы конвертации
+      responses:
+        '200':
+          description: Курсы
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  currencies:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CurrencyRate'
+
+  /payments/providers:
+    get:
+      tags: [Payments]
+      summary: Список провайдеров услуг
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+            example: "Интернет"
+      responses:
+        '200':
+          description: Провайдеры
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Provider'
+
+  /payments/providers/{providerId}:
+    get:
+      tags: [Payments]
+      summary: Информация о провайдере
+      parameters:
+        - $ref: '#/components/parameters/ProviderIdParam'
+      responses:
+        '200':
+          description: Провайдер
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Provider'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /payments/providers/{providerId}/pay:
+    post:
+      tags: [Payments]
+      summary: Создание платежа провайдеру
+      parameters:
+        - $ref: '#/components/parameters/ProviderIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRequest'
+      responses:
+        '201':
+          description: Платёж создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /my/loans:
+    get:
+      tags: [Loans]
+      summary: Список кредитов клиента
+      responses:
+        '200':
+          description: Кредиты
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  loans:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Loan'
+
+  /my/loans/{loanId}:
+    get:
+      tags: [Loans]
+      summary: Детали кредита
+      parameters:
+        - $ref: '#/components/parameters/LoanIdParam'
+      responses:
+        '200':
+          description: Кредит
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Loan'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /my/loans/{loanId}/schedule:
+    get:
+      tags: [Loans]
+      summary: График платежей по кредиту
+      parameters:
+        - $ref: '#/components/parameters/LoanIdParam'
+      responses:
+        '200':
+          description: График
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schedule:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LoanScheduleItem'
+
+  /public/currencies:
+    get:
+      tags: [Public]
+      summary: Публичные курсы валют
+      security: []
+      responses:
+        '200':
+          description: Курсы
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  currencies:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CurrencyRate'
+
+  /public/branches:
+    get:
+      tags: [Infrastructure, Public]
+      summary: Список отделений
+      security: []
+      parameters:
+        - name: city
+          in: query
+          schema:
+            type: string
+        - name: openNow
+          in: query
+          schema:
+            type: boolean
+        - name: services
+          in: query
+          schema:
+            type: string
+            description: CSV-список услуг (например, "ипотека,юридические лица")
+      responses:
+        '200':
+          description: Отделения
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  branches:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Branch'
+
+  /public/atms:
+    get:
+      tags: [Infrastructure, Public]
+      summary: Список банкоматов
+      security: []
+      parameters:
+        - name: lat
+          in: query
+          schema:
+            type: number
+            format: double
+        - name: lng
+          in: query
+          schema:
+            type: number
+            format: double
+        - name: radius
+          in: query
+          schema:
+            type: integer
+            description: Радиус поиска в метрах
+        - name: cashIn
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Банкоматы
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  atms:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ATM'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    AccountIdParam:
+      name: accountId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Идентификатор счёта
+    ProviderIdParam:
+      name: providerId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Идентификатор провайдера услуг
+    LoanIdParam:
+      name: loanId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    FromDateParam:
+      name: fromDate
+      in: query
+      schema:
+        type: string
+        format: date
+    ToDateParam:
+      name: toDate
+      in: query
+      schema:
+        type: string
+        format: date
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSizeParam:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+
+  responses:
+    UnauthorizedError:
+      description: Access token is missing or invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BadRequest:
+      description: Validation or business error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          description: В секундах до следующего запроса
+          schema:
+            type: integer
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          example: Invalid account number
+        traceId:
+          type: string
+          example: 3f6e9c9a3b2143b98a3c6c1c8a2f6eaa
+
+    AuthTokens:
+      type: object
+      properties:
+        access_token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        token_type:
+          type: string
+          example: bearer
+        expires_in:
+          type: integer
+          example: 3600
+        refresh_token:
+          type: string
+          example: d3f4ultRefr3shT0ken
+
+    Profile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+          example: Иванов Иван Иванович
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+          example: +7-900-000-00-00
+        passport:
+          type: object
+          properties:
+            number:
+              type: string
+              example: 4000 123456
+            issueDate:
+              type: string
+              format: date
+
+    Amount:
+      type: object
+      required: [value, currency]
+      properties:
+        value:
+          type: number
+          format: double
+          example: 15430.45
+        currency:
+          type: string
+          example: RUB
+
+    Account:
+      type: object
+      required: [id, number, currency, balance, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        number:
+          type: string
+          example: 40817810099910004312
+        currency:
+          type: string
+          example: RUB
+        balance:
+          $ref: '#/components/schemas/Amount'
+        status:
+          type: string
+          enum: [ACTIVE, BLOCKED, CLOSED]
+          example: ACTIVE
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: tx-123456
+        accountId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date-time
+          example: 2025-08-01T10:15:00Z
+        amount:
+          $ref: '#/components/schemas/Amount'
+        type:
+          type: string
+          enum: [DEBIT, CREDIT]
+          example: DEBIT
+        description:
+          type: string
+          example: Оплата мобильной связи
+        counterparty:
+          type: string
+          example: ООО «Связь»
+        status:
+          type: string
+          enum: [PENDING, COMPLETED, FAILED]
+          example: COMPLETED
+
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 50
+        totalItems:
+          type: integer
+          example: 123
+        totalPages:
+          type: integer
+          example: 3
+
+    PagedTransactions:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    TransferWithinBankRequest:
+      type: object
+      required: [fromAccount, toAccount, amount]
+      properties:
+        fromAccount:
+          type: string
+          example: 40817810099910004312
+        toAccount:
+          type: string
+          example: 40817810011120005432
+        amount:
+          $ref: '#/components/schemas/Amount'
+        description:
+          type: string
+          example: Перевод другу
+
+    TransferToOtherBankRequest:
+      type: object
+      required: [fromAccount, amount, beneficiary]
+      properties:
+        fromAccount:
+          type: string
+        amount:
+          $ref: '#/components/schemas/Amount'
+        beneficiary:
+          type: object
+          required: [name, bankBIC, accountNumber]
+          properties:
+            name:
+              type: string
+              example: ИП Петров П.П.
+            bankBIC:
+              type: string
+              example: 044525225
+            accountNumber:
+              type: string
+              example: 40702810900000012345
+            inn:
+              type: string
+              example: 7701234567
+        purpose:
+          type: string
+          example: Оплата по договору №12 от 01.08.2025
+
+    TransferResult:
+      type: object
+      properties:
+        transactionId:
+          type: string
+          example: tx999888
+        status:
+          type: string
+          enum: [PENDING, CONFIRMATION_REQUIRED, COMPLETED]
+          example: CONFIRMATION_REQUIRED
+        confirmationRequired:
+          type: boolean
+          example: true
+
+    TransferTemplate:
+      type: object
+      properties:
+        id:
+          type: string
+          example: tpl-001
+        name:
+          type: string
+          example: Мобильная связь
+        lastUsed:
+          type: string
+          format: date-time
+
+    CurrencyRate:
+      type: object
+      properties:
+        code:
+          type: string
+          example: USD
+        buy:
+          type: number
+          format: double
+          example: 94.50
+        sell:
+          type: number
+          format: double
+          example: 96.00
+
+    Provider:
+      type: object
+      properties:
+        id:
+          type: string
+          example: pr-telecom-01
+        name:
+          type: string
+          example: МегаТелеком
+        category:
+          type: string
+          example: Интернет
+        fields:
+          type: array
+          description: Поля, необходимые для оплаты (номер договора, телефон и т.д.)
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+                example: contractNumber
+              label:
+                type: string
+                example: Номер договора
+              type:
+                type: string
+                enum: [string, number]
+                example: string
+
+    PaymentRequest:
+      type: object
+      required: [fromAccount, amount, details]
+      properties:
+        fromAccount:
+          type: string
+        amount:
+          $ref: '#/components/schemas/Amount'
+        details:
+          type: object
+          additionalProperties: true
+          example:
+            contractNumber: "1234567890"
+
+    PaymentResult:
+      type: object
+      properties:
+        paymentId:
+          type: string
+          example: pay-0001
+        status:
+          type: string
+          enum: [PENDING, COMPLETED, FAILED]
+          example: COMPLETED
+
+    Loan:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        amount:
+          $ref: '#/components/schemas/Amount'
+        rate:
+          type: number
+          format: double
+          example: 12.5
+        termMonths:
+          type: integer
+          example: 36
+        outstanding:
+          $ref: '#/components/schemas/Amount'
+        type:
+          type: string
+          example: Потребительский
+
+    LoanScheduleItem:
+      type: object
+      properties:
+        paymentDate:
+          type: string
+          format: date
+        principal:
+          $ref: '#/components/schemas/Amount'
+        interest:
+          $ref: '#/components/schemas/Amount'
+        total:
+          $ref: '#/components/schemas/Amount'
+        remainingPrincipal:
+          $ref: '#/components/schemas/Amount'
+
+    Branch:
+      type: object
+      properties:
+        id:
+          type: string
+          example: br-001
+        address:
+          type: string
+          example: г. Москва, ул. Ленина, 10
+        openHours:
+          type: string
+          example: Пн–Пт 09:00–18:00
+        services:
+          type: array
+          items:
+            type: string
+
+    ATM:
+      type: object
+      properties:
+        id:
+          type: string
+          example: atm-123
+        address:
+          type: string
+        supportsCashIn:
+          type: boolean
+          example: true
+        status:
+          type: string
+          enum: [ONLINE, OFFLINE]
+          example: ONLINE
